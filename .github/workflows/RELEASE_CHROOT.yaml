@@ -93,7 +93,7 @@ jobs:
           go build --tags fts5 -v -ldflags "-s -w"
           # 将产物收集到 output 目录（自行调整路径）
           mkdir -p ../output
-          cp ./kesrnel ../output/
+          cp ./kernel ../output/
           # 获取前端文件
           wget "https://github.com/${{ steps.upstream.outputs.repo }}/releases/download/${{ steps.upstream.outputs.latest }}/siyuan-${{ steps.upstream.outputs.version_clean }}-linux.tar.gz"
           tar xzvf "siyuan-${{ steps.upstream.outputs.version_clean }}-linux.tar.gz"
