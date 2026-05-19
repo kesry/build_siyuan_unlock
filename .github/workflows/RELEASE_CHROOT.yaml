@@ -186,7 +186,9 @@ jobs:
             echo "release_exists=false" >> $GITHUB_OUTPUT
             echo "Release $TAG_NAME 不存在，将创建"
           fi
-          
+      - name: 获取编译时间
+        id: build_time
+        run: echo "compile_time=$(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
       - name: 创建 Release 并上传所有产物
         if: steps.check_release.outputs.release_exists == 'false'
         uses: softprops/action-gh-release@v2
@@ -211,7 +213,8 @@ jobs:
             - `stage/` (舞台资源)
             
             ## ⏰ 编译时间
-            $(date '+%Y-%m-%d %H:%M:%S UTC')
+            ${{ steps.build_time.outputs.compile_time }}
+
           draft: false
           prerelease: false
           files: |
