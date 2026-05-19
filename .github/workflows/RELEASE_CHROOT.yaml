@@ -1,0 +1,123 @@
+name: 自动编译上游新版本
+
+on:
+  schedule:
+    # 每小时检查一次（可按需调整）
+    - cron: '0 4 * * *'
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build-if-new-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read      # 检出代码
+      actions: write      # 保存缓存
+    # 定义要构建的架构矩阵
+    strategy:
+      matrix:
+        include:
+          - name: amd64
+            goarch: amd64
+            goarm: ""
+            cc: gcc
+          - name: arm64
+            goarch: arm64
+            goarm: ""
+            cc: aarch64-linux-gnu-gcc
+          - name: armv7
+            goarch: arm
+            goarm: "7"
+            cc: arm-linux-gnueabihf-gcc
+          - name: armv6
+            goarch: arm
+            goarm: "6"
+            cc: arm-linux-gnueabihf-gcc
+    steps:
+      - name: 获取上游最新 Release 版本
+        id: upstream
+        env:
+          # 请替换为实际的上游仓库，例如 "oven-sh/bun"
+          REPO: appdev/siyuan-unlock
+        run: |
+          LATEST=$(gh api repos/$REPO/releases/latest --jq .tag_name)
+          echo "latest=${LATEST}" >> $GITHUB_OUTPUT
+          echo "上游最新版本: ${LATEST}"
+          VERSION_CLEAN="${LATEST#v}"
+          echo "version_clean=${VERSION_CLEAN}" >> $GITHUB_OUTPUT
+
+      - name: 恢复上次编译的版本缓存
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: .last-version
+          # key 每次唯一，确保不会命中主键，从而自动保存新缓存
+          key: upstream-version-${{ github.run_id }}
+          restore-keys: |
+            upstream-version-
+
+      - name: 读取已编译版本
+        id: cached
+        run: |
+          if [ -f .last-version ]; then
+            echo "version=$(cat .last-version)" >> $GITHUB_OUTPUT
+          else
+            echo "version=none" >> $GITHUB_OUTPUT
+          fi
+          echo "上次编译版本: ${{ steps.cached.outputs.version }}"
+
+      - name: 安装交叉编译工具链
+        if: steps.upstream.outputs.latest != steps.cached.outputs.version
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf zip unzip wget
+
+      - name: 编译（仅当版本更新时）
+        if: steps.upstream.outputs.latest != steps.cached.outputs.version
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          CGO_ENABLED: 1
+          CC: ${{ matrix.cc }}
+          GO111MODULE: on
+        run: |
+          echo "发现新版本 ${{ steps.upstream.outputs.latest }}，开始编译..."
+          
+          # --- 你的编译流程（请按实际修改）---
+          git clone --depth 1 --branch ${{ steps.upstream.outputs.latest }} \
+            https://github.com/${{ env.REPO }}.git source
+          cd source/kernel
+          # 编译代码
+          go build --tags fts5 -v -ldflags "-s -w"
+          # 将产物收集到 output 目录（自行调整路径）
+          mkdir -p ../output
+          cp ./kesrnel ../output/
+          # 获取前端文件
+          wget "https://github.com/${{ env.REPO }}/releases/download/${{ steps.upstream.outputs.latest }}/siyuan-${{ steps.upstream.outputs.version_clean }}-linux.tar.gz"
+          tar xzvf "siyuan-${{ steps.upstream.outputs.version_clean }}-linux.tar.gz"
+          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/appearance" ../output/
+          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/changelogs" ../output/
+          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/guide" ../output/
+          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/stage" ../output/
+
+          # 打包
+          cd ../outout
+          zip -r "siyuan_unlock_${{ steps.upstream.outputs.latest }}.zip" appearance/ changelogs/ guide/ stage/ kernel
+          # ------------------------------------
+
+      - name: 上传编译产物
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.HUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.upstream.outputs.latest }}
+          name: Release ${{ steps.upstream.outputs.latest }}
+          body: |
+            ${{ steps.upstream.outputs.latest }}
+          draft: false
+          prerelease: false
+          files: output/*.zip
+
+      - name: 更新版本缓存文件
+        if: steps.upstream.outputs.latest != steps.cached.outputs.version
+        run: echo "${{ steps.upstream.outputs.latest }}" > .last-version
