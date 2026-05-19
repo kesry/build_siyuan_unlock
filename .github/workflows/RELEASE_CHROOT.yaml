@@ -45,6 +45,7 @@ jobs:
           echo "上游最新版本: ${LATEST}"
           VERSION_CLEAN="${LATEST#v}"
           echo "version_clean=${VERSION_CLEAN}" >> $GITHUB_OUTPUT
+          echo "repo=$REPO" >> $GITHUB_OUTPUT
 
       - name: 恢复上次编译的版本缓存
         id: cache
@@ -86,7 +87,7 @@ jobs:
           
           # --- 你的编译流程（请按实际修改）---
           git clone --depth 1 --branch ${{ steps.upstream.outputs.latest }} \
-            https://github.com/${{ env.REPO }}.git source
+            https://github.com/${{ steps.upstream.outputs.repo }}.git source
           cd source/kernel
           # 编译代码
           go build --tags fts5 -v -ldflags "-s -w"
@@ -94,7 +95,7 @@ jobs:
           mkdir -p ../output
           cp ./kesrnel ../output/
           # 获取前端文件
-          wget "https://github.com/${{ env.REPO }}/releases/download/${{ steps.upstream.outputs.latest }}/siyuan-${{ steps.upstream.outputs.version_clean }}-linux.tar.gz"
+          wget "https://github.com/${{ steps.upstream.outputs.repo }}/releases/download/${{ steps.upstream.outputs.latest }}/siyuan-${{ steps.upstream.outputs.version_clean }}-linux.tar.gz"
           tar xzvf "siyuan-${{ steps.upstream.outputs.version_clean }}-linux.tar.gz"
           cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/appearance" ../output/
           cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/changelogs" ../output/
