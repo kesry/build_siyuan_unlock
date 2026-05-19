@@ -10,7 +10,7 @@ jobs:
   build-if-new-release:
     runs-on: ubuntu-latest
     permissions:
-      contents: read      # 检出代码
+      contents: write      # 检出代码
       actions: write      # 保存缓存
     # 定义要构建的架构矩阵
     strategy:
