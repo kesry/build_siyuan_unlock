@@ -2,17 +2,16 @@ name: 自动编译上游新版本
 
 on:
   schedule:
-    # 每小时检查一次（可按需调整）
     - cron: '0 4 * * *'
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:
 
 jobs:
-  build-if-new-release:
+  # Job 1: 编译所有架构
+  build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write      # 检出代码
-      actions: write      # 保存缓存
-    # 定义要构建的架构矩阵
+      contents: write
+      actions: write
     strategy:
       matrix:
         include:
@@ -32,11 +31,14 @@ jobs:
             goarch: arm
             goarm: "6"
             cc: arm-linux-gnueabihf-gcc
+    outputs:
+      has_new_version: ${{ steps.check.outputs.has_new_version }}
+      latest_version: ${{ steps.upstream.outputs.latest }}
+      version_clean: ${{ steps.upstream.outputs.version_clean }}
     steps:
       - name: 获取上游最新 Release 版本
         id: upstream
         env:
-          # 请替换为实际的上游仓库，例如 "oven-sh/bun"
           REPO: appdev/siyuan-unlock
           GH_TOKEN: ${{ secrets.HUB_TOKEN }}
         run: |
@@ -52,29 +54,37 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .last-version
-          # key 每次唯一，确保不会命中主键，从而自动保存新缓存
           key: upstream-version-${{ github.run_id }}
           restore-keys: |
             upstream-version-
 
-      - name: 读取已编译版本
-        id: cached
+      - name: 读取已编译版本并判断是否需要编译
+        id: check
         run: |
           if [ -f .last-version ]; then
-            echo "version=$(cat .last-version)" >> $GITHUB_OUTPUT
+            CACHED_VERSION=$(cat .last-version)
+            echo "cached_version=${CACHED_VERSION}" >> $GITHUB_OUTPUT
           else
-            echo "version=none" >> $GITHUB_OUTPUT
+            CACHED_VERSION="none"
+            echo "cached_version=none" >> $GITHUB_OUTPUT
           fi
-          echo "上次编译版本: ${{ steps.cached.outputs.version }}"
+          
+          if [ "$CACHED_VERSION" != "${{ steps.upstream.outputs.latest }}" ]; then
+            echo "has_new_version=true" >> $GITHUB_OUTPUT
+            echo "发现新版本: ${{ steps.upstream.outputs.latest }} (缓存版本: ${CACHED_VERSION})"
+          else
+            echo "has_new_version=false" >> $GITHUB_OUTPUT
+            echo "无新版本，跳过编译 (当前版本: ${CACHED_VERSION})"
+          fi
 
       - name: 安装交叉编译工具链
-        if: steps.upstream.outputs.latest != steps.cached.outputs.version
+        if: steps.check.outputs.has_new_version == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf zip unzip wget
 
       - name: 编译（仅当版本更新时）
-        if: steps.upstream.outputs.latest != steps.cached.outputs.version
+        if: steps.check.outputs.has_new_version == 'true'
         env:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
@@ -83,44 +93,131 @@ jobs:
           CC: ${{ matrix.cc }}
           GO111MODULE: on
         run: |
-          echo "发现新版本 ${{ steps.upstream.outputs.latest }}，开始编译..."
+          echo "发现新版本 ${{ steps.upstream.outputs.latest }}，开始编译架构 ${{ matrix.name }}..."
           
-          # --- 你的编译流程（请按实际修改）---
+          # 克隆代码
           git clone --depth 1 --branch ${{ steps.upstream.outputs.latest }} \
             https://github.com/${{ steps.upstream.outputs.repo }}.git source
-          mkdir -p output/
+          mkdir -p output/${{ matrix.name }}
+          
+          # 编译内核
           cd source/kernel
-          # 编译代码
           go build --tags fts5 -v -ldflags "-s -w"
-          # 将产物收集到 output 目录（自行调整路径）
           cd ../..
-          cp source/kernel/kernel output/
-          # 获取前端文件
-          wget "https://github.com/${{ steps.upstream.outputs.repo }}/releases/download/${{ steps.upstream.outputs.latest }}/siyuan-${{ steps.upstream.outputs.version_clean }}-linux.tar.gz"
-          tar xzvf "siyuan-${{ steps.upstream.outputs.version_clean }}-linux.tar.gz"
-          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/appearance"  output/
-          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/changelogs"  output/
-          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/guide"  output/
-          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/stage"  output/
-
+          cp source/kernel/kernel output/${{ matrix.name }}/
+          
+          # 获取前端文件（使用文件锁避免冲突）
+          lockfile="siyuan-${{ steps.upstream.outputs.version_clean }}-linux.download.lock"
+          if ! mkdir "$lockfile" 2>/dev/null; then
+            while [ -d "$lockfile" ]; do sleep 1; done
+          fi
+          if [ ! -d "siyuan-${{ steps.upstream.outputs.version_clean }}-linux" ]; then
+            wget "https://github.com/${{ steps.upstream.outputs.repo }}/releases/download/${{ steps.upstream.outputs.latest }}/siyuan-${{ steps.upstream.outputs.version_clean }}-linux.tar.gz"
+            tar xzvf "siyuan-${{ steps.upstream.outputs.version_clean }}-linux.tar.gz"
+          fi
+          rmdir "$lockfile" 2>/dev/null || true
+          
+          # 复制前端资源
+          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/appearance" output/${{ matrix.name }}/
+          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/changelogs" output/${{ matrix.name }}/
+          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/guide" output/${{ matrix.name }}/
+          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/stage" output/${{ matrix.name }}/
+          
           # 打包
-          cd output
+          cd output/${{ matrix.name }}
           zip -r "siyuan_unlock_${{ steps.upstream.outputs.latest }}_${{ matrix.name }}.zip" appearance/ changelogs/ guide/ stage/ kernel
-          # ------------------------------------
+          cd ../..
+          
+          # 保存版本信息
+          echo "${{ steps.upstream.outputs.latest }}" > .last-version
 
-      - name: 上传编译产物
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.HUB_TOKEN }}
+      - name: 上传产物作为 Artifact
+        if: steps.check.outputs.has_new_version == 'true'
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.upstream.outputs.latest }}
-          name: Release ${{ steps.upstream.outputs.latest }}
+          name: siyuan-unlock-${{ matrix.name }}-${{ steps.upstream.outputs.latest }}
+          path: output/${{ matrix.name }}/siyuan_unlock_*.zip
+          retention-days: 1
+
+  # Job 2: 统一发布（仅当有新版本时）
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    # 关键修改：只有当有新版本时才运行
+    if: needs.build.outputs.has_new_version == 'true'
+    permissions:
+      contents: write
+    steps:
+      - name: 下载所有编译产物
+        uses: actions/download-artifact@v4
+        
+      - name: 获取版本信息
+        id: version
+        run: |
+          # 从第一个 artifact 目录提取版本
+          for dir in siyuan-unlock-*/; do
+            if [ -d "$dir" ]; then
+              filename=$(ls "$dir"/*.zip 2>/dev/null | head -1)
+              if [ -n "$filename" ]; then
+                # 提取版本号，例如 siyuan_unlock_v1.2.3_amd64.zip -> v1.2.3
+                VERSION=$(echo "$filename" | grep -oP 'v\d+\.\d+\.\d+' | head -1)
+                if [ -n "$VERSION" ]; then
+                  echo "version=$VERSION" >> $GITHUB_OUTPUT
+                  echo "提取到版本: $VERSION"
+                  break
+                fi
+              fi
+            fi
+          done
+          
+          if [ -z "${{ steps.version.outputs.version }}" ]; then
+            echo "无法提取版本号，使用 needs.build 中的版本"
+            echo "version=${{ needs.build.outputs.latest_version }}" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: 检查 Release 是否已存在
+        id: check_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="${{ steps.version.outputs.version }}"
+          echo "检查 tag: $TAG_NAME 是否存在..."
+          
+          if gh release view "$TAG_NAME" &>/dev/null; then
+            echo "release_exists=true" >> $GITHUB_OUTPUT
+            echo "Release $TAG_NAME 已存在，跳过创建"
+          else
+            echo "release_exists=false" >> $GITHUB_OUTPUT
+            echo "Release $TAG_NAME 不存在，将创建"
+          fi
+          
+      - name: 创建 Release 并上传所有产物
+        if: steps.check_release.outputs.release_exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
           body: |
-            ${{ steps.upstream.outputs.latest }}
+            🤖 自动编译版本: ${{ steps.version.outputs.version }}
+            
+            ## 📦 包含架构
+            - amd64 (x86_64)
+            - arm64 (ARM64)
+            - armv7 (ARM 32-bit v7)
+            - armv6 (ARM 32-bit v6)
+            
+            ## 📁 文件说明
+            每个 zip 包包含:
+            - `kernel` (主程序)
+            - `appearance/` (外观资源)
+            - `changelogs/` (更新日志)
+            - `guide/` (指南)
+            - `stage/` (舞台资源)
+            
+            ## ⏰ 编译时间
+            $(date '+%Y-%m-%d %H:%M:%S UTC')
           draft: false
           prerelease: false
-          files: output/*.zip
-
-      - name: 更新版本缓存文件
-        if: steps.upstream.outputs.latest != steps.cached.outputs.version
-        run: echo "${{ steps.upstream.outputs.latest }}" > .last-version
+          files: */siyuan_unlock_*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
