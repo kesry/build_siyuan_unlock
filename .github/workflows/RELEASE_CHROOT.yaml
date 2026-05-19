@@ -38,6 +38,7 @@ jobs:
         env:
           # 请替换为实际的上游仓库，例如 "oven-sh/bun"
           REPO: appdev/siyuan-unlock
+          GH_TOKEN: ${{ secrets.HUB_TOKEN }}
         run: |
           LATEST=$(gh api repos/$REPO/releases/latest --jq .tag_name)
           echo "latest=${LATEST}" >> $GITHUB_OUTPUT
