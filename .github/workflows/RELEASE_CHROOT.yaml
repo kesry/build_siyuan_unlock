@@ -105,7 +105,7 @@ jobs:
 
           # 打包
           cd output
-          zip -r "siyuan_unlock_${{ steps.upstream.outputs.latest }}.zip" appearance/ changelogs/ guide/ stage/ kernel
+          zip -r "siyuan_unlock_${{ steps.upstream.outputs.latest }}_${{ matrix.name }}.zip" appearance/ changelogs/ guide/ stage/ kernel
           # ------------------------------------
 
       - name: 上传编译产物
