@@ -147,7 +147,6 @@ jobs:
     steps:
       - name: 下载所有编译产物
         uses: actions/download-artifact@v4
-        
       - name: 获取版本信息
         id: version
         run: |
@@ -215,6 +214,7 @@ jobs:
             $(date '+%Y-%m-%d %H:%M:%S UTC')
           draft: false
           prerelease: false
-          files: */siyuan_unlock_*.zip
+          files: |
+            */siyuan_unlock_*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
