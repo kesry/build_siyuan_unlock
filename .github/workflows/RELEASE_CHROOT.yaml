@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Job 1: 编译所有架构
   build:
     runs-on: ubuntu-latest
     permissions:
@@ -139,11 +138,9 @@ jobs:
           path: output/${{ matrix.name }}/siyuan_unlock_*.zip
           retention-days: 1
 
-  # Job 2: 统一发布（仅当有新版本时）
   release:
     needs: build
     runs-on: ubuntu-latest
-    # 关键修改：只有当有新版本时才运行
     if: needs.build.outputs.has_new_version == 'true'
     permissions:
       contents: write
