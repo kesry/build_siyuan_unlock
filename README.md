@@ -4,4 +4,4 @@
 
 ## 使用方式
 
-RUN_IN_CONTAINER=true ./kernel --workspace=/path/your/workspace --accessAuthCode="your auth token"
+RUN_IN_CONTAINER=true ./kernel --workspace=/path/your/workspace --accessAuthCode="your auth token" --port=6806
