@@ -88,22 +88,23 @@ jobs:
           # --- 你的编译流程（请按实际修改）---
           git clone --depth 1 --branch ${{ steps.upstream.outputs.latest }} \
             https://github.com/${{ steps.upstream.outputs.repo }}.git source
+          mkdir -p output/
           cd source/kernel
           # 编译代码
           go build --tags fts5 -v -ldflags "-s -w"
           # 将产物收集到 output 目录（自行调整路径）
-          mkdir -p ../output
-          cp ./kernel ../output/
+          cd ../..
+          cp source/kernel/kernel output/
           # 获取前端文件
           wget "https://github.com/${{ steps.upstream.outputs.repo }}/releases/download/${{ steps.upstream.outputs.latest }}/siyuan-${{ steps.upstream.outputs.version_clean }}-linux.tar.gz"
           tar xzvf "siyuan-${{ steps.upstream.outputs.version_clean }}-linux.tar.gz"
-          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/appearance" ../output/
-          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/changelogs" ../output/
-          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/guide" ../output/
-          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/stage" ../output/
+          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/appearance"  output/
+          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/changelogs"  output/
+          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/guide"  output/
+          cp -a "siyuan-${{ steps.upstream.outputs.version_clean }}-linux/resources/stage"  output/
 
           # 打包
-          cd ../outout
+          cd output
           zip -r "siyuan_unlock_${{ steps.upstream.outputs.latest }}.zip" appearance/ changelogs/ guide/ stage/ kernel
           # ------------------------------------
 
