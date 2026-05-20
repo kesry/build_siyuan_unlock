@@ -2,7 +2,8 @@ name: 自动编译上游新版本
 
 on:
   schedule:
-    - cron: '0 4 * * *'
+    # 北京时间4:00
+    - cron: '0 20 * * *'
   workflow_dispatch:
 
 jobs:
