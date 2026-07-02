@@ -82,19 +82,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf zip unzip wget
-
-      - name: 编译（仅当版本更新时）
+      - name: 应用补丁
         if: steps.check.outputs.has_new_version == 'true'
-        env:
-          GOOS: linux
-          GOARCH: ${{ matrix.goarch }}
-          GOARM: ${{ matrix.goarm }}
-          CGO_ENABLED: 1
-          CC: ${{ matrix.cc }}
-          GO111MODULE: on
         run: |
-          echo "发现新版本 ${{ steps.upstream.outputs.latest }}，开始编译架构 ${{ matrix.name }}..."
-          
           # 克隆代码
           git clone --depth 1 --branch ${{ steps.upstream.outputs.latest }} \
             https://github.com/siyuan-note/siyuan.git source
@@ -109,7 +99,19 @@ jobs:
           git apply ${{ github.workspace }}/patch/patches/siyuan/hide-account-entry.patch
           cd ..
           echo "补丁已更新完毕"
-          
+
+
+      - name: 编译（仅当版本更新时）
+        if: steps.check.outputs.has_new_version == 'true'
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          CGO_ENABLED: 1
+          CC: ${{ matrix.cc }}
+          GO111MODULE: on
+        run: |
+          echo "发现新版本 ${{ steps.upstream.outputs.latest }}，开始编译架构 ${{ matrix.name }}..."
           mkdir -p output/${{ matrix.name }}
           
           # 编译内核
