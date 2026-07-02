@@ -96,10 +96,10 @@ jobs:
           cd source
           
           # 应用补丁
-          git apply ${{ github.workspace }}/patch/patches/siyuan/disable-update.patch
-          git apply ${{ github.workspace }}/patch/patches/siyuan/default-config.patch
-          git apply ${{ github.workspace }}/patch/patches/siyuan/mock-vip-user.patch
-          git apply ${{ github.workspace }}/patch/patches/siyuan/hide-account-entry.patch
+          git apply --verbose ${{ github.workspace }}/patch/patches/siyuan/disable-update.patch
+          git apply --verbose ${{ github.workspace }}/patch/patches/siyuan/default-config.patch
+          git apply --verbose ${{ github.workspace }}/patch/patches/siyuan/mock-vip-user.patch
+          git apply --verbose ${{ github.workspace }}/patch/patches/siyuan/hide-account-entry.patch
           git status
           
           cd ../..
