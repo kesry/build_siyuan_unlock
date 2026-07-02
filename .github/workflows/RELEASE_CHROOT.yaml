@@ -92,7 +92,7 @@ jobs:
           git status
           
           # 创建标记文件，用于验证补丁已被应用
-          echo "patched-at-$(date -Iseconds)" > .patch-applied
+          echo "patched-at-$(date -Iseconds)" > patch-applied
           echo "PATCH_APPLIED=true" >> $GITHUB_ENV
           
           cd ..
@@ -147,12 +147,12 @@ jobs:
 
       - name: 验证补丁已被应用（安全检查）
         run: |
-          if [ ! -f source/.patch-applied ]; then
+          if [ ! -f source/patch-applied ]; then
             echo "❌ 错误：源码未打补丁！"
             exit 1
           fi
           echo "✅ 验证通过：源码已打补丁"
-          echo "补丁应用时间: $(cat source/.patch-applied)"
+          echo "补丁应用时间: $(cat source/patch-applied)"
 
       - name: 编译（各架构并行）
         env:
