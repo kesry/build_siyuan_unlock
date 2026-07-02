@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ==================== Job 1: 检查更新 + 打补丁（只执行一次） ====================
+  # ==================== Job 1: 检查更新 + 准备所有资源（只执行一次） ====================
   prepare:
     runs-on: ubuntu-latest
     permissions:
@@ -60,14 +60,13 @@ jobs:
             echo "无新版本，跳过编译 (当前版本: ${CACHED_VERSION})"
           fi
 
-      # ========== 只在有新版本时执行补丁 ==========
       - name: 安装交叉编译工具链
         if: steps.check.outputs.has_new_version == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf zip unzip wget
 
-      - name: 克隆源码并应用补丁（只执行一次）
+      - name: 克隆源码并应用补丁
         id: patch
         if: steps.check.outputs.has_new_version == 'true'
         run: |
@@ -91,30 +90,44 @@ jobs:
           echo "✅ 所有补丁应用成功"
           git status
           
-          # 创建标记文件，用于验证补丁已被应用
+          # 创建标记文件
           echo "patched-at-$(date -Iseconds)" > patch-applied
-          echo "PATCH_APPLIED=true" >> $GITHUB_ENV
-          
           cd ..
 
-      - name: 打包并上传补丁后的源码
+      # ========== 新增：在 prepare 中下载前端（只下载一次） ==========
+      - name: 下载前端资源（只下载一次，所有架构共享）
+        if: steps.check.outputs.has_new_version == 'true'
+        env:
+          VERSION_CLEAN: ${{ steps.upstream.outputs.version_clean }}
+          LATEST: ${{ steps.upstream.outputs.latest }}
+          REPO: ${{ steps.upstream.outputs.repo }}
+        run: |
+          echo "开始下载前端资源..."
+          wget "https://github.com/${REPO}/releases/download/${LATEST}/siyuan-${VERSION_CLEAN}-linux.tar.gz"
+          tar xzvf "siyuan-${VERSION_CLEAN}-linux.tar.gz"
+          rm -f "siyuan-${VERSION_CLEAN}-linux.tar.gz"
+          echo "✅ 前端资源下载完成"
+          ls -la "siyuan-${VERSION_CLEAN}-linux/"
+
+      - name: 打包完整资源（源码 + 前端）
         if: steps.check.outputs.has_new_version == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: patched-source
+          name: full-build-resources
           path: |
             source/
-            patch_repo/  # 也上传补丁仓库，以备不时之需
+            siyuan-*-linux/
+            patch_repo/
           retention-days: 1
 
-      - name: 保存版本信息（供后续 Job 使用）
+      - name: 保存版本信息
         if: steps.check.outputs.has_new_version == 'true'
         run: |
           echo "${{ steps.upstream.outputs.latest }}" > .last-version
 
-  # ==================== Job 2: 多架构并行编译 ====================
+  # ==================== Job 2: 多架构并行编译（直接使用完整资源） ====================
   build:
-    needs: prepare  # 等待 prepare Job 完成
+    needs: prepare
     runs-on: ubuntu-latest
     if: needs.prepare.outputs.has_new_version == 'true'
     strategy:
@@ -136,25 +149,37 @@ jobs:
             goarch: arm
             goarm: "6"
             cc: arm-linux-gnueabihf-gcc
-      fail-fast: false  # 一个架构失败不影响其他架构
+      fail-fast: false
 
     steps:
-      - name: 下载补丁后的源码
+      - name: 下载完整资源（源码 + 前端）
         uses: actions/download-artifact@v4
         with:
-          name: patched-source
-          path: ./  # 下载到当前目录
+          name: full-build-resources
+          path: ./
 
-      - name: 验证补丁已被应用（安全检查）
+      - name: 验证资源完整性
         run: |
           if [ ! -f source/patch-applied ]; then
             echo "❌ 错误：源码未打补丁！"
             exit 1
           fi
-          echo "✅ 验证通过：源码已打补丁"
-          echo "补丁应用时间: $(cat source/patch-applied)"
+          echo "✅ 源码已打补丁: $(cat source/patch-applied)"
+          
+          FRONTEND_DIR="siyuan-${{ needs.prepare.outputs.version_clean }}-linux"
+          if [ ! -d "$FRONTEND_DIR" ]; then
+            echo "❌ 错误：前端资源不存在！"
+            exit 1
+          fi
+          echo "✅ 前端资源存在: $FRONTEND_DIR"
+          ls -la "$FRONTEND_DIR/resources/"
 
-      - name: 编译（各架构并行）
+      - name: 设置 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: 编译 ${{ matrix.name }}
         env:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
@@ -162,44 +187,40 @@ jobs:
           CGO_ENABLED: 1
           CC: ${{ matrix.cc }}
           GO111MODULE: on
+          GOPROXY: https://proxy.golang.org,direct
         run: |
           echo "开始编译架构: ${{ matrix.name }} (GOARCH=${{ matrix.goarch }})"
-          mkdir -p output/${{ matrix.name }}
           
-          # 编译内核（使用打补丁后的源码）
-          cd source/kernel
+          # 为每个架构创建独立构建目录，避免相互干扰
+          BUILD_DIR="build_${{ matrix.name }}"
+          mkdir -p "$BUILD_DIR"
+          
+          # 复制源码到独立目录
+          cp -r source "$BUILD_DIR/"
+          cd "$BUILD_DIR/source/kernel"
+          
+          # 编译内核
           go build --tags fts5 -v -ldflags "-s -w"
-          cd ../..
-          cp source/kernel/kernel output/${{ matrix.name }}/
+          cd ../../..
           
-          # ========== 获取前端文件（使用文件锁避免并行冲突） ==========
-          lockfile="siyuan-${{ needs.prepare.outputs.version_clean }}-linux.download.lock"
-          if ! mkdir "$lockfile" 2>/dev/null; then
-            echo "等待其他架构下载前端文件..."
-            while [ -d "$lockfile" ]; do sleep 1; done
-          fi
+          # 创建输出目录
+          mkdir -p "output/${{ matrix.name }}"
+          cp "$BUILD_DIR/source/kernel/kernel" "output/${{ matrix.name }}/"
           
-          if [ ! -d "siyuan-${{ needs.prepare.outputs.version_clean }}-linux" ]; then
-            echo "开始下载前端文件..."
-            wget "https://github.com/${{ needs.prepare.outputs.repo }}/releases/download/${{ needs.prepare.outputs.latest_version }}/siyuan-${{ needs.prepare.outputs.version_clean }}-linux.tar.gz"
-            tar xzvf "siyuan-${{ needs.prepare.outputs.version_clean }}-linux.tar.gz"
-            echo "前端文件下载完成"
-          else
-            echo "前端文件已存在，跳过下载"
-          fi
-          
-          rmdir "$lockfile" 2>/dev/null || true
-          
-          # 复制前端资源
-          cp -a "siyuan-${{ needs.prepare.outputs.version_clean }}-linux/resources/appearance" output/${{ matrix.name }}/
-          cp -a "siyuan-${{ needs.prepare.outputs.version_clean }}-linux/resources/changelogs" output/${{ matrix.name }}/
-          cp -a "siyuan-${{ needs.prepare.outputs.version_clean }}-linux/resources/guide" output/${{ matrix.name }}/
-          cp -a "siyuan-${{ needs.prepare.outputs.version_clean }}-linux/resources/stage" output/${{ matrix.name }}/
+          # 直接使用前端资源（无需再下载）
+          FRONTEND_DIR="siyuan-${{ needs.prepare.outputs.version_clean }}-linux"
+          cp -a "${FRONTEND_DIR}/resources/appearance" "output/${{ matrix.name }}/"
+          cp -a "${FRONTEND_DIR}/resources/changelogs" "output/${{ matrix.name }}/"
+          cp -a "${FRONTEND_DIR}/resources/guide" "output/${{ matrix.name }}/"
+          cp -a "${FRONTEND_DIR}/resources/stage" "output/${{ matrix.name }}/"
           
           # 打包
-          cd output/${{ matrix.name }}
+          cd "output/${{ matrix.name }}"
           zip -r "siyuan_unlock_${{ needs.prepare.outputs.latest_version }}_${{ matrix.name }}.zip" appearance/ changelogs/ guide/ stage/ kernel
           cd ../..
+          
+          # 清理构建目录（释放空间）
+          rm -rf "$BUILD_DIR"
           
           echo "✅ ${{ matrix.name }} 编译完成"
 
@@ -212,7 +233,7 @@ jobs:
 
   # ==================== Job 3: 创建 Release ====================
   release:
-    needs: [prepare, build]  # 等待所有构建完成
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     if: needs.prepare.outputs.has_new_version == 'true'
     permissions:
