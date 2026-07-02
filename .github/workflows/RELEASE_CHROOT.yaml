@@ -97,7 +97,19 @@ jobs:
           
           # 克隆代码
           git clone --depth 1 --branch ${{ steps.upstream.outputs.latest }} \
-            https://github.com/${{ steps.upstream.outputs.repo }}.git source
+            https://github.com/siyuan-note/siyuan.git source
+          git clone --depth 1 --branch ${{ steps.upstream.outputs.latest }} \
+            https://github.com/${{ steps.upstream.outputs.repo }}.git patch
+
+          # 应用补丁
+          cd source
+          git apply ${{ github.workspace }}/patch/patches/siyuan/disable-update.patch
+          git apply ${{ github.workspace }}/patch/patches/siyuan/default-config.patch
+          git apply ${{ github.workspace }}/patch/patches/siyuan/mock-vip-user.patch
+          git apply ${{ github.workspace }}/patch/patches/siyuan/hide-account-entry.patch
+          cd ..
+          echo "补丁已更新完毕"
+          
           mkdir -p output/${{ matrix.name }}
           
           # 编译内核
