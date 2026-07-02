@@ -72,7 +72,7 @@ jobs:
         if: steps.check.outputs.has_new_version == 'true'
         run: |
           # 克隆补丁仓库
-          git clone --depth 1 --branch ${{ steps.upstream.outputs.latest }} \
+          git clone --depth 1 \
             https://github.com/${{ steps.upstream.outputs.repo }}.git patch_repo
           
           # 克隆上游源码
