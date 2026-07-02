@@ -174,10 +174,10 @@ jobs:
           echo "✅ 前端资源存在: $FRONTEND_DIR"
           ls -la "$FRONTEND_DIR/resources/"
 
-      - name: 设置 Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
+      - name: 安装交叉编译工具链
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf zip unzip wget golang
 
       - name: 编译 ${{ matrix.name }}
         env:
