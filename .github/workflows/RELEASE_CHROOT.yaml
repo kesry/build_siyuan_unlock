@@ -87,9 +87,11 @@ jobs:
         run: |
           # 克隆代码
           git clone --depth 1 --branch ${{ steps.upstream.outputs.latest }} \
-            https://github.com/siyuan-note/siyuan.git source
-          git clone --depth 1 --branch ${{ steps.upstream.outputs.latest }} \
             https://github.com/${{ steps.upstream.outputs.repo }}.git patch
+
+          cd patch
+          git clone --depth 1 --branch ${{ steps.upstream.outputs.latest }} \
+            https://github.com/siyuan-note/siyuan.git source
 
           # 应用补丁
           cd source
@@ -97,8 +99,9 @@ jobs:
           git apply ${{ github.workspace }}/patch/patches/siyuan/default-config.patch
           git apply ${{ github.workspace }}/patch/patches/siyuan/mock-vip-user.patch
           git apply ${{ github.workspace }}/patch/patches/siyuan/hide-account-entry.patch
-          cd ..
+          cd ../..
           echo "补丁已更新完毕"
+          cp -a patch/source ./
 
 
       - name: 编译（仅当版本更新时）
