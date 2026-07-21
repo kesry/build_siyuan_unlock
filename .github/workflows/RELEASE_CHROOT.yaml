@@ -73,7 +73,7 @@ jobs:
         run: |
           # 克隆补丁仓库
           git clone --depth 1 \
-            https://github.com/${{ steps.upstream.outputs.repo }}.git patch_repo
+            https://github.com/appdev/siyuan-unlock.git patch_repo
           
           # 克隆上游源码
           git clone --depth 1 --branch ${{ steps.upstream.outputs.latest }} \
