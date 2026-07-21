@@ -22,7 +22,8 @@ jobs:
       - name: 获取上游最新 Release 版本
         id: upstream
         env:
-          REPO: appdev/siyuan-unlock
+          #REPO: appdev/siyuan-unlock
+          REPO: siyuan-note/siyuan
           GH_TOKEN: ${{ secrets.HUB_TOKEN }}
         run: |
           LATEST=$(gh api repos/$REPO/releases/latest --jq .tag_name)
