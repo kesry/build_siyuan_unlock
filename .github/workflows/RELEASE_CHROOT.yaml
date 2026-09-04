@@ -181,10 +181,10 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf zip unzip wget
 
       - name: Setup Go environment
-        uses: actions/setup-go@v6.5.0
+        uses: actions/setup-go@v7.0.0
         with:
           # The Go version to download (if necessary) and use. Supports semver spec and ranges. Be sure to enclose this option in single quotation marks.
-          go-version: 1.26.0
+          go-version: 1.26.5
 
       - name: 编译 ${{ matrix.name }}
         env:
